@@ -1,5 +1,6 @@
 const crypto = require('crypto');
 const moment = require('moment');
+const omit = require('lodash/omit');
 
 const postBodyJsonSchema = {
   type: 'object',
@@ -30,6 +31,21 @@ const putJsonSchema = {
   }
 }
 
+const getUsersJsonSchema = {
+  query: {
+    type: 'object',
+    required: ['offset', 'limit'],
+    properties: {
+      userName: { type: 'string' },
+      phone: { type: 'string' },
+      role: { type: 'string' },
+      operator: { type: 'string' },
+      offset: { type: 'number' },
+      limit: { type: 'number' }
+    },
+  }
+}
+
 const user = async (fastify) => {
   fastify.post('/user', {
     body: postBodyJsonSchema
@@ -46,17 +62,47 @@ const user = async (fastify) => {
   })
 
   fastify.get('/users', {
+    ...getUsersJsonSchema,
     preHandler: [fastify.authenticate]
   }, async(request, reply) => {
     let users = []
-    const params = ['userName', 'id', 'phone', 'role', 'operator', 'createdAt', 'updatedAt']
+    const params = ['userName', 'password', 'id', 'phone', 'role', 'operator', 'createdAt', 'updatedAt']
+    const { offset = 1, limit = 10, userName } = request.query
+    const search = omit(request.query, ['offset', 'limit', 'userName'])
+    let total = 1
     if (request.user.role === '超级管理员') {
-      users = await fastify.knex.select(params).from('users')
+      users = await fastify.knex.select(params).from('users').where((qb) => {
+        if (userName) {
+          qb.where('userName', 'like', `%${userName}%`);
+        }
+        Object.getOwnPropertyNames(search).forEach(function(key){
+          qb.orWhere(`${key}`, '=', search[key]);
+        });
+      }).limit(limit).offset(limit * (offset -1))
+      const count = await fastify.knex.count('id').from('users').where((qb) => {
+        if (userName) {
+          qb.where('userName', 'like', `%${userName}%`);
+        }
+        Object.getOwnPropertyNames(search).forEach(function(key){
+          qb.orWhere(`${key}`, '=', search[key]);
+        });
+      })
+      total = parseInt(count[0].count)
     } else {
       users = [
         request.user
       ]
     }
+    return reply.send({ code: 200, data: users, total, offset, limit })
+  })
+
+  fastify.get('/user', {
+    preHandler: [fastify.authenticate]
+  }, async(request, reply) => {
+    let users = []
+    const params = ['userName', 'id', 'phone', 'role', 'operator', 'createdAt', 'updatedAt']
+    users = await fastify.knex.select(params).first().from('users').where('id', '=', request.user.id)
+
     return reply.send({ code: 200, data: users })
   })
 
@@ -68,7 +114,7 @@ const user = async (fastify) => {
     .update({
       ...request.body,
       updatedAt: moment.utc().format(),
-      operator: request.user.operator
+      operator: request.user.userName
     }).from('users')
     return reply.send({ code: 200, data: 'success' })
   })

@@ -28,7 +28,7 @@ const auth = async (fastify) => {
     const user = omit(result, ['password'])
     const token = await reply.jwtSign(user, process.env.TOKEN_PRIMARY_KEY);
     reply.setCookie('token', token, {
-      domain: '*',
+      domain: 'localhost',
       path: '/',
       secure: true,
       httpOnly: true,
@@ -45,7 +45,7 @@ const auth = async (fastify) => {
 
   fastify.get('/logout', {}, async(request, reply) => {
     reply.setCookie('token', '', {
-      domain: '*',
+      domain: 'localhost',
       path: '/',
       secure: true,
       httpOnly: true,
